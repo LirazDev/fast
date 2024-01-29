@@ -1,13 +1,7 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
-import {
-  useState,
-  useEffect,
-  JSXElementConstructor,
-  Key,
-  ReactElement,
-  ReactNode,
-  ReactPortal,
-} from "react";
+// HomePage.tsx
+import { useState, useEffect, useRef } from "react";
+import { usePushNotifications } from ".././usePushNotifications"; // adjust the path based on your project structure
+
 import { DateTimePicker } from "@mui/x-date-pickers/DateTimePicker";
 import { LocalizationProvider } from "@mui/x-date-pickers/LocalizationProvider";
 import { AdapterDateFns } from "@mui/x-date-pickers/AdapterDateFns";
@@ -17,13 +11,8 @@ import {
   Box,
   Button,
   CircularProgress,
-  LinearProgress,
   Snackbar,
-  Dialog,
-  DialogTitle,
-  DialogContent,
-  DialogActions,
-  TextField,
+  Backdrop,
 } from "@mui/material";
 import { db } from "../firebase";
 import {
@@ -36,35 +25,129 @@ import {
   onSnapshot,
   query,
 } from "firebase/firestore";
+import { usePageVisibility } from "../usePageVisibility";
+
+import Timer from "../Timer";
+import UserProgress, { User } from "../UserProgress";
+import FeedbackDialog from "../FeedbackDialog";
+
+function calculateEndingTime(
+  inputDate: Date | null,
+  hoursToAdd: number,
+  desiredStartTime: Date | null
+): string {
+  // Get the current time
+  const currentTime = new Date();
+  const getNewTime = () => {
+    if (desiredStartTime && inputDate) {
+      if (desiredStartTime < inputDate) {
+        return desiredStartTime.getTime();
+      } else {
+        return inputDate.getTime();
+      }
+    } else if (inputDate) {
+      return inputDate.getTime();
+    }
+    return currentTime.getTime();
+  };
+  // Calculate the new time by adding hours
+  const newTime = new Date(getNewTime() + hoursToAdd * 1000);
+
+  // Check if the new time has already passed
+
+  if (newTime < currentTime) {
+    return "Feast Ended 🥳";
+  }
+
+  // Determine if the new time is today or tomorrow
+  let endingStr = "Ending Today";
+  if (newTime.getDate() !== currentTime.getDate()) {
+    endingStr = "Ending Tomorrow";
+  }
+
+  // Format the hours and minutes
+  const hours = newTime.getHours().toString().padStart(2, "0");
+  const minutes = newTime.getMinutes().toString().padStart(2, "0");
+
+  // Combine the ending string and formatted time
+  const result = `${endingStr} at ${hours}:${minutes}`;
+
+  return result;
+}
+
+function calculateEndTime(
+  inputDate: Date | null,
+  hoursToAdd: number,
+  desiredStartTime: Date | null
+): Date | null {
+  // Get the current time
+
+  const getNewTime = () => {
+    if (desiredStartTime && inputDate) {
+      if (desiredStartTime < inputDate) {
+        return desiredStartTime.getTime();
+      } else {
+        return inputDate.getTime();
+      }
+    } else if (inputDate) {
+      return inputDate.getTime();
+    }
+    return null;
+  };
+  // Calculate the new time by adding hours
+  const newTime = getNewTime();
+  return newTime === null ? null : new Date(newTime + hoursToAdd * 1000);
+}
+// Define an interface for user objects in otherUsers state
+export interface OtherUser {
+  id: string;
+  name: string;
+  timer?: {
+    isRunning: boolean;
+    startTime: {
+      toDate: () => Date;
+    };
+    elapsedTime: number;
+  };
+  goal: number;
+}
+
+// Define types for states that were previously any
+type CurrentSessionIdType = string | null;
+type EndTimeType = Date | null;
 
 const HomePage = () => {
   const [timer, setTimer] = useState(0);
   const [isRunning, setIsRunning] = useState(false);
-  const [intervalId, setIntervalId] = useState<any>(null);
   const [goal, setGoal] = useState(0); // In seconds
   const [progress, setProgress] = useState(0);
   const [userName, setUserName] = useState("");
-  const [otherUsers, setOtherUsers] = useState<any>([]);
+  const [otherUsers, setOtherUsers] = useState<User[]>([]);
   const [snackbarOpen, setSnackbarOpen] = useState(false);
   const [snackbarMessage, setSnackbarMessage] = useState("");
   const [userNote, setUserNote] = useState("");
   const [dialogOpen, setDialogOpen] = useState(false);
   const [feedbackMessage, setFeedbackMessage] = useState("");
   const [loading, setLoading] = useState(true);
-  const [currentSessionId, setCurrentSessionId] = useState<any>(null);
+  const [currentSessionId, setCurrentSessionId] =
+    useState<CurrentSessionIdType>(null);
   const [buttonLoading, setButtonLoading] = useState(false);
-  const [desiredStartTime, setDesiredStartTime] = useState<any>(new Date());
-
+  const [desiredStartTime, setDesiredStartTime] = useState<Date | null>(null);
+  const isVisible = usePageVisibility();
+  const [endTime, setEndTime] = useState<EndTimeType>(null);
   const userId = localStorage.getItem("userId");
   const navigate = useNavigate();
-
+  usePushNotifications();
   const handleCloseSnackbar = () => {
     setSnackbarOpen(false);
   };
 
-  // Fetch user's data
+  const intervalIdRef = useRef<NodeJS.Timeout | null>(null);
+
   useEffect(() => {
     const fetchUserData = async () => {
+      setLoading(true);
+
       if (userId) {
         const userRef = doc(db, "users", userId);
         const userSnap = await getDoc(userRef);
@@ -73,15 +156,31 @@ const HomePage = () => {
           const userData = userSnap.data();
           setUserName(userData.name);
           setGoal(userData.goal * 3600); // Convert goal from hours to seconds
+
+          if (userData.timer?.isRunning) {
+            setIsRunning(true);
+            const startTime = userData.timer.startTime.toDate();
+            const currentTime = new Date() as unknown as number;
+            const elapsedTime = Math.floor((currentTime - startTime) / 1000);
+            setEndTime(startTime); // Make sure you have a state or function for setEndTime
+            setTimer(elapsedTime);
+            startTimer();
+          } else {
+            setIsRunning(false);
+            setTimer(0);
+          }
           setLoading(false);
         } else {
+          localStorage.removeItem("userId");
           navigate("/login");
         }
+      } else {
+        navigate("/login");
       }
     };
 
     fetchUserData();
-  }, [userId, navigate]);
+  }, [userId, navigate, isVisible]);
 
   // Update progress when timer changes
   useEffect(() => {
@@ -91,44 +190,43 @@ const HomePage = () => {
     }
   }, [timer, goal]);
 
-  // Fetch other users' data and listen for changes
   useEffect(() => {
-    let previousUsers: any[] = [];
+    let previousUsers: OtherUser[] = [];
 
     const fetchOtherUsers = () => {
       const unsubscribe = onSnapshot(
         query(collection(db, "users")),
         (querySnapshot) => {
-          const usersData: any[] | ((prevState: never[]) => never[]) = [];
+          const usersData: User[] = [];
           querySnapshot.forEach((doc) => {
             if (doc.id !== userId) {
-              // Exclude the current user
-              const data = doc.data();
-              // Find the same user in previousUsers to compare
+              const data = doc.data() as User;
               const previousUserData = previousUsers.find(
                 (user) => user.id === doc.id
               );
+
               if (data.timer && data.timer.isRunning) {
-                if (previousUserData && !previousUserData.timer.isRunning) {
-                  // Timer was started
+                // Timer was started
+                if (previousUserData?.timer?.isRunning === false) {
                   setSnackbarMessage(`${data.name} started a timer!`);
                   setSnackbarOpen(true);
                 }
                 const startTime = data.timer.startTime.toDate();
-                const currentTime = new Date() as any;
+                const currentTime = new Date();
                 const elapsedTime = Math.floor(
-                  (currentTime - startTime) / 1000
+                  (currentTime.getTime() - startTime.getTime()) / 1000
                 );
                 data.timer.elapsedTime = elapsedTime;
-              } else if (previousUserData && previousUserData.timer.isRunning) {
+              } else if (previousUserData?.timer?.isRunning === true) {
                 // Timer was stopped
                 setSnackbarMessage(`${data.name} stopped their timer!`);
                 setSnackbarOpen(true);
               }
-              usersData.push({ id: doc.id, ...data });
+
+              usersData.push({ ...data, id: doc.id });
             }
           });
-          previousUsers = usersData; // Update previousUsers for the next snapshot
+          previousUsers = usersData;
           setOtherUsers(usersData);
         }
       );
@@ -139,32 +237,9 @@ const HomePage = () => {
     const unsubscribeFromOtherUsers = fetchOtherUsers();
 
     return () => {
-      unsubscribeFromOtherUsers(); // Clean up the subscription
+      unsubscribeFromOtherUsers();
     };
-  }, [userId]);
-
-  // Update other users' elapsed time every second
-  useEffect(() => {
-    const intervalId = setInterval(() => {
-      setOtherUsers((currentUsers: any[]) =>
-        currentUsers.map(
-          (user: {
-            timer: { isRunning: any; startTime: { toDate: () => any } };
-          }) => {
-            if (user.timer && user.timer.isRunning) {
-              const startTime = user.timer.startTime.toDate();
-              const currentTime = new Date() as unknown as number;
-              const elapsedTime = Math.floor((currentTime - startTime) / 1000);
-              return { ...user, timer: { ...user.timer, elapsedTime } };
-            }
-            return user;
-          }
-        )
-      );
-    }, 1000);
-
-    return () => clearInterval(intervalId);
-  }, []);
+  }, [userId, isVisible, navigate]);
 
   const handleStart = async () => {
     setButtonLoading(true);
@@ -175,21 +250,29 @@ const HomePage = () => {
       "timer.startTime": startTime,
       "timer.isRunning": true,
     });
+
+    const notificationRef = doc(collection(db, "notifications"));
+    await setDoc(notificationRef, {
+      userId: userId,
+      type: "start",
+      timestamp: serverTimestamp(),
+    });
+    setEndTime(new Date());
     setIsRunning(true);
     startTimer();
     setButtonLoading(false);
   };
 
   const handleStop = async () => {
-    if (intervalId) {
-      clearInterval(intervalId);
-      setIntervalId(null);
+    if (intervalIdRef.current) {
+      clearInterval(intervalIdRef.current);
+      intervalIdRef.current = null;
     }
 
     setButtonLoading(true);
 
-    intervalId && clearInterval(intervalId);
-    setIntervalId(null);
+    intervalIdRef.current && clearInterval(intervalIdRef.current);
+    intervalIdRef.current = null;
     setIsRunning(false);
 
     const userRef = doc(db, "users", userId ?? "defaultUserId");
@@ -205,6 +288,13 @@ const HomePage = () => {
       startTime: serverTimestamp(),
       endTime: serverTimestamp(),
       duration: timer,
+    });
+
+    const notificationRef = doc(collection(db, "notifications"));
+    await setDoc(notificationRef, {
+      userId: userId,
+      type: "stop",
+      timestamp: serverTimestamp(),
     });
 
     // Store the current session ID
@@ -255,43 +345,16 @@ const HomePage = () => {
   };
 
   const startTimer = () => {
-    if (intervalId) {
-      clearInterval(intervalId);
+    // Clear any existing interval
+    if (intervalIdRef.current) {
+      clearInterval(intervalIdRef.current);
     }
 
-    const id = setInterval(() => {
+    // Set a new interval
+    intervalIdRef.current = setInterval(() => {
       setTimer((prevTime) => prevTime + 1);
     }, 1000);
-    setIntervalId(id);
   };
-
-  useEffect(() => {
-    const fetchUserData = async () => {
-      if (userId) {
-        const userRef = doc(db, "users", userId);
-        const userSnap = await getDoc(userRef);
-
-        if (userSnap.exists()) {
-          const userData = userSnap.data();
-          if (userData.timer && userData.timer.isRunning) {
-            setIsRunning(true);
-            const startTime = userData.timer.startTime.toDate();
-            const currentTime = new Date() as unknown as number;
-            const elapsedTime = Math.floor((currentTime - startTime) / 1000);
-            setTimer(elapsedTime);
-            startTimer();
-          }
-        } else {
-          localStorage.removeItem("userId");
-          navigate("/login");
-        }
-      } else {
-        navigate("/login");
-      }
-    };
-
-    fetchUserData();
-  }, [userId, navigate]);
 
   const handleUpdateTime = async () => {
     if (!isRunning) {
@@ -309,10 +372,13 @@ const HomePage = () => {
     });
 
     // Calculate the elapsed time since the desired start time
-    const currentTime = new Date() as unknown as number;
-    const elapsedTime = Math.floor((currentTime - desiredStartTime) / 1000);
-    if (intervalId) {
-      clearInterval(intervalId);
+    const currentTime = new Date();
+    const elapsedTime = Math.floor(
+      (currentTime.getTime() - (desiredStartTime || new Date()).getTime()) /
+        1000
+    );
+    if (intervalIdRef.current) {
+      clearInterval(intervalIdRef.current);
     }
 
     setTimer(elapsedTime); // Update the timer
@@ -323,132 +389,59 @@ const HomePage = () => {
     setButtonLoading(false); // Hide loading indicator
   };
 
-  const feedbackDialog = (
-    <Dialog open={dialogOpen} onClose={() => setDialogOpen(false)}>
-      <DialogTitle>Session Feedback</DialogTitle>
-      <DialogContent>
-        <Typography>{feedbackMessage}</Typography>
-        <TextField
-          dir="rtl"
-          autoFocus
-          margin="dense"
-          id="note"
-          label="Note for Self"
-          multiline
-          rows={4}
-          value={userNote}
-          onChange={(e) => setUserNote(e.target.value)}
-          fullWidth
-        />
-      </DialogContent>
-      <DialogActions>
-        <Button onClick={() => setDialogOpen(false)} color="primary">
-          Close
-        </Button>
-        <Button onClick={handleSaveUserNote} color="primary">
-          Save Note
-        </Button>
-      </DialogActions>
-    </Dialog>
-  );
-
   // Loader
   if (loading) {
-    return <CircularProgress />;
+    return (
+      <Backdrop
+        sx={{
+          background: "#22222255",
+          color: "#fff",
+          zIndex: (theme) => theme.zIndex.drawer + 1,
+        }}
+        open={true}
+      >
+        <CircularProgress color="inherit" size={60} />
+      </Backdrop>
+    );
   }
 
   return (
     <LocalizationProvider dateAdapter={AdapterDateFns}>
       <Box
         sx={{
+          background: "transparent",
           display: "flex",
           flexDirection: "column",
           alignItems: "center",
           justifyContent: "center",
-          height: "80vh",
+          minHeight: "100%",
           padding: "20px",
         }}
       >
         <Typography variant="h5">Welcome, {userName}!</Typography>
         <Typography variant="h6">Today's goal is {goal / 3600}hr</Typography>
 
-        <Box
-          sx={{
-            position: "relative",
-            display: "flex",
-            flexDirection: "column",
-            alignItems: "center",
-            justifyContent: "center",
-            height: "50vh",
-          }}
-        >
-          {/* Background Progress Bar (Light Gray Full Circle) */}
-          <CircularProgress
-            variant="determinate"
-            value={100}
-            size={200}
-            thickness={4}
-            sx={{ color: "lightgray", position: "absolute" }}
-          />
-
-          {/* Foreground Progress Bar (Dynamic Green Progress) */}
-          <CircularProgress
-            variant="determinate"
-            value={progress}
-            size={200}
-            thickness={4}
-            sx={{
-              color: progress >= 100 ? "green" : "green",
-              position: "absolute",
-            }}
-          />
-
-          <Box
-            sx={{
-              position: "absolute",
-              top: "50%",
-              left: "50%",
-              transform: "translate(-50%, -50%)",
-              display: "flex",
-              flexDirection: "column",
-              alignItems: "center",
-            }}
-          >
-            <Typography variant="h4">
-              {new Date(timer * 1000).toISOString().substr(11, 8)}
-            </Typography>
-            <Button
-              onClick={isRunning ? handleStop : handleStart}
-              variant="contained"
-              color="primary"
-              sx={{ mt: 2 }}
-              disabled={buttonLoading}
-              startIcon={
-                buttonLoading && (
-                  <CircularProgress
-                    size={24}
-                    sx={{
-                      color: "white",
-                      position: "absolute",
-                      top: "50%",
-                      left: "50%",
-                      marginTop: "-12px",
-                      marginLeft: "-12px",
-                    }}
-                  />
-                )
-              }
-            >
-              {isRunning ? "Stop" : "Start"}
-            </Button>
-          </Box>
-        </Box>
-
+        {/* Timer Component */}
+        <Timer
+          timer={timer}
+          endTime={calculateEndTime(endTime, goal, desiredStartTime)}
+          isRunning={isRunning}
+          progress={progress}
+          handleStart={handleStart}
+          handleStop={handleStop}
+          buttonLoading={buttonLoading}
+          goal={goal}
+        />
+        {/* Conditional Rendering */}
         {isRunning && (
           <>
+            <Typography sx={{ marginBottom: 2 }}>
+              {calculateEndingTime(endTime, goal, desiredStartTime)}
+            </Typography>
             <DateTimePicker
-              label="Desired Start Time"
+              label="Chose Start Time"
               value={desiredStartTime}
+              onOpen={() => !desiredStartTime && setDesiredStartTime(endTime)}
               onChange={(newValue) => {
                 if (newValue && newValue instanceof Date) {
                   setDesiredStartTime(newValue);
@@ -458,8 +451,7 @@ const HomePage = () => {
             <Button
               onClick={handleUpdateTime}
               variant="outlined"
-              color="secondary"
-              sx={{ mt: 2 }}
+              sx={{ mt: 2, color: "#eb595a", border: "1px solid #eb595a" }}
               disabled={buttonLoading || !isRunning}
             >
               Update Start Time
@@ -467,46 +459,18 @@ const HomePage = () => {
           </>
         )}
 
-        {otherUsers.map(
-          (user: {
-            id: Key | null | undefined;
-            name:
-              | string
-              | number
-              | boolean
-              | ReactElement<any, string | JSXElementConstructor<any>>
-              | Iterable<ReactNode>
-              | ReactPortal
-              | null
-              | undefined;
-            timer: { elapsedTime: number };
-            goal: number;
-          }) => (
-            <Box key={user.id} sx={{ width: "100%", mt: 2 }}>
-              <Typography variant="subtitle1">
-                {user.name}'s Progress
-              </Typography>
-              <LinearProgress
-                variant="determinate"
-                value={
-                  user.timer
-                    ? (user.timer.elapsedTime / (user.goal * 3600)) * 100
-                    : 0
-                }
-              />
-              <Typography variant="caption">
-                {user.timer && !isNaN(user.timer.elapsedTime)
-                  ? new Date(user.timer.elapsedTime * 1000)
-                      .toISOString()
-                      .substr(11, 8)
-                  : "Not started"}
-              </Typography>
-            </Box>
-          )
-        )}
+        {/* UserProgress Component */}
+        <UserProgress users={otherUsers} />
 
-        {/* Dialog for feedback and note */}
-        {feedbackDialog}
+        {/* FeedbackDialog Component */}
+        <FeedbackDialog
+          open={dialogOpen}
+          onClose={() => setDialogOpen(false)}
+          feedbackMessage={feedbackMessage}
+          userNote={userNote}
+          setUserNote={setUserNote}
+          handleSaveUserNote={handleSaveUserNote}
+        />
 
         {/* Snackbar for Notifications */}
         <Snackbar

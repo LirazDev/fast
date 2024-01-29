@@ -6,7 +6,7 @@ const NavBar = () => {
   const navigate = useNavigate();
 
   return (
-    <AppBar position="static">
+    <AppBar position="sticky" sx={{ background: "#eb595a", top: 0 }}>
       <Toolbar>
         <Button color="inherit" onClick={() => navigate("/")}>
           Home

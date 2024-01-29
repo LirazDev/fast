@@ -17,6 +17,7 @@ export const CollapsibleText: React.FC<CollapsibleTextProps> = ({
   };
 
   const textStyle = {
+    direction: "rtl",
     maxWidth: "100px", // Adjust the width as needed
     overflow: "hidden",
     textOverflow: "ellipsis",
@@ -26,7 +27,7 @@ export const CollapsibleText: React.FC<CollapsibleTextProps> = ({
 
   if (text.length <= maxLength) {
     return (
-      <Typography style={textStyle} onClick={toggleIsCollapsed}>
+      <Typography sx={textStyle} onClick={toggleIsCollapsed}>
         {text}
       </Typography>
     );
@@ -34,7 +35,7 @@ export const CollapsibleText: React.FC<CollapsibleTextProps> = ({
 
   return (
     <Box onClick={toggleIsCollapsed}>
-      <Typography style={textStyle}>
+      <Typography sx={textStyle}>
         {isCollapsed ? `${text.substring(0, maxLength)}...` : text}
       </Typography>
     </Box>

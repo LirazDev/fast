@@ -1,3 +1,4 @@
+//App.tsx
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import HomePage from "./pages/HomePage";
 import LoginPage from "./pages/LoginPage";
@@ -6,7 +7,7 @@ import NavBar from "./NavBar";
 
 function App() {
   return (
-    <BrowserRouter>
+    <BrowserRouter basename="/fast">
       <NavBar />
       <Routes>
         <Route path="/" element={<HomePage />} />

@@ -24,41 +24,32 @@ a:hover {
 
 body {
   margin: 0;
+  height: 100vh;
+  background-color: #fbfefe;
 }
 
 h1 {
   font-size: 3.2em;
   line-height: 1.1;
-}
-
-button {
-  border-radius: 8px;
-  border: 1px solid transparent;
-  padding: 0.6em 1.2em;
-  font-size: 1em;
-  font-weight: 500;
-  font-family: inherit;
-  background-color: #1a1a1a;
-  cursor: pointer;
-  transition: border-color 0.25s;
-}
-button:hover {
-  border-color: #646cff;
-}
-button:focus,
-button:focus-visible {
-  outline: 4px auto -webkit-focus-ring-color;
+  margin-block: 10px;
 }
 
 @media (prefers-color-scheme: light) {
   :root {
     color: #213547;
-    background-color: #ffffff;
+    background-color: #fbfefe;
   }
-  a:hover {
-    color: #747bff;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    color: #e3f1fe;
+    background-color: #2e2c2c;
   }
-  button {
-    background-color: #f9f9f9;
+  body {
+    background-color: #2e2c2c;
+  }
+  .MuiTableCell-root,
+  .MuiPaper-root {
+    color: #e3f1fe !important;
   }
 }

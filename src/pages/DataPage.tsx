@@ -1,14 +1,4 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
-// DataPage.tsx
-import {
-  useState,
-  useEffect,
-  JSXElementConstructor,
-  Key,
-  ReactElement,
-  ReactNode,
-  ReactPortal,
-} from "react";
+import { useState, useEffect } from "react";
 import { db } from "../firebase";
 import { collection, getDocs, query, orderBy } from "firebase/firestore";
 import { format } from "date-fns";
@@ -22,21 +12,30 @@ import {
   Paper,
   CircularProgress,
   Box,
+  Backdrop,
+  Button,
 } from "@mui/material";
 import { CollapsibleText } from "../CollapsibleText";
 
+// Define a type for session data
+type Session = {
+  id: string;
+  endTime: { seconds: number };
+  name: string;
+  duration: number;
+  note: string | null;
+};
+
 const DataPage = () => {
-  const [sessions, setSessions] = useState<any>([]);
-  const [isLoading, setIsLoading] = useState(true); // State for loading indicator
+  const [sessions, setSessions] = useState<Session[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
   const [filter, setFilter] = useState("all");
   const userId = localStorage.getItem("userId");
 
   useEffect(() => {
     const fetchSessions = async () => {
-      setIsLoading(true); // Start loading
-      const sessionsData:
-        | ((prevState: never[]) => never[])
-        | { id: string; name: any }[] = [];
+      setIsLoading(true);
+      const sessionsData: Session[] = [];
 
       // Fetch data based on filter
       if (filter === "all") {
@@ -49,10 +48,13 @@ const DataPage = () => {
             )
           );
           userSessionsSnapshot.forEach((sessionDoc) => {
+            const sessionData = sessionDoc.data();
             sessionsData.push({
               id: sessionDoc.id,
               name: userDoc.data().name, // Assuming each user document has a 'name' field
-              ...sessionDoc.data(),
+              endTime: sessionData.endTime,
+              duration: sessionData.duration,
+              note: sessionData.note || null,
             });
           });
         }
@@ -63,13 +65,22 @@ const DataPage = () => {
             orderBy("endTime", "desc")
           )
         );
-        userSessionsSnapshot.forEach((doc) => {
-          sessionsData.push({ id: doc.id, name: "Me", ...doc.data() });
+        userSessionsSnapshot.forEach((sessionDoc) => {
+          const sessionData = sessionDoc.data();
+
+          sessionsData.push({
+            id: sessionDoc.id,
+            name: "ME",
+            endTime: sessionData.endTime,
+            duration: sessionData.duration,
+            note: sessionData.note || null,
+          });
         });
       }
-
-      setSessions(sessionsData);
-      setIsLoading(false); // End loading
+      setSessions(
+        sessionsData.sort((a, b) => b.endTime.seconds - a.endTime.seconds)
+      );
+      setIsLoading(false);
     };
 
     fetchSessions();
@@ -77,77 +88,92 @@ const DataPage = () => {
 
   const formatDate = (dateString: { seconds: number }) => {
     const date = new Date(dateString.seconds * 1000);
-    return format(date, "dd/MM"); // Format the date as "day/month"
+    return format(date, "dd/MM");
   };
 
   if (isLoading) {
-    return <CircularProgress />;
+    return (
+      <Backdrop
+        sx={{
+          background: "#22222255",
+          color: "#fff",
+          zIndex: (theme) => theme.zIndex.drawer + 1,
+        }}
+        open={true}
+      >
+        <CircularProgress color="inherit" size={60} />
+      </Backdrop>
+    );
   }
 
   return (
     <Box sx={{ padding: "20px" }}>
       <h1>Data Page</h1>
-      <button onClick={() => setFilter("all")}>All Activities</button>
-      <button onClick={() => setFilter("mine")}>My Activities</button>
-      <TableContainer component={Paper}>
+      <Box
+        sx={{
+          display: "flex",
+          gap: 1,
+          mb: 2,
+          position: "sticky",
+          top: "60px",
+        }}
+      >
+        <Button
+          onClick={() => setFilter("all")}
+          variant="contained"
+          sx={{ mt: 2, background: "#eb595a" }}
+        >
+          All Activities
+        </Button>
+        <Button
+          onClick={() => setFilter("mine")}
+          variant="contained"
+          sx={{ mt: 2, background: "#eb595a" }}
+        >
+          My Activities
+        </Button>
+      </Box>
+
+      <TableContainer component={Paper} sx={{ background: "transparent" }}>
         <Table aria-label="simple table">
           <TableHead>
             <TableRow>
               <TableCell>Date</TableCell>
-              {filter === "all" && (
-                <TableCell align="right">Name</TableCell>
-              )}{" "}
-              {/* Conditionally render the Name column header */}
+              {filter === "all" && <TableCell align="right">Name</TableCell>}
               <TableCell align="right" sx={{ width: "150px" }}>
-                Fasting Time
+                Time
               </TableCell>
               <TableCell align="right" sx={{ width: "200px" }}>
                 Note
               </TableCell>
             </TableRow>
           </TableHead>
+
           <TableBody>
-            {sessions.map(
-              (session: {
-                id: Key | null | undefined;
-                endTime: any;
-                name:
-                  | string
-                  | number
-                  | boolean
-                  | ReactElement<any, string | JSXElementConstructor<any>>
-                  | Iterable<ReactNode>
-                  | ReactPortal
-                  | null
-                  | undefined;
-                duration: number;
-                note: any;
-              }) => (
-                <TableRow
-                  key={session.id}
-                  sx={{ "&:last-child td, &:last-child th": { border: 0 } }}
-                >
-                  <TableCell component="th" scope="row">
-                    {formatDate(session.endTime)}
-                  </TableCell>
-                  {filter === "all" && (
-                    <TableCell align="right">{session.name}</TableCell>
-                  )}{" "}
-                  {/* Conditionally render the Name cell */}
-                  <TableCell align="right">
-                    {new Date(session.duration * 1000)
-                      .toISOString()
-                      .substr(11, 8)}
-                  </TableCell>
-                  <TableCell align="right">
-                    <CollapsibleText
-                      text={session.note || "No note"}
-                      maxLength={50}
-                    />
-                  </TableCell>
-                </TableRow>
-              )
-            )}
+            {sessions.map((session) => (
+              <TableRow
+                key={session.id}
+                sx={{ "&:last-child td, &:last-child th": { border: 0 } }}
+              >
+                <TableCell component="th" scope="row">
+                  {formatDate(session.endTime)}
+                </TableCell>
+                {filter === "all" && (
+                  <TableCell align="right">{session.name}</TableCell>
+                )}
+                <TableCell align="right">
+                  {new Date(session.duration * 1000)
+                    .toISOString()
+                    .substr(11, 8)}
+                </TableCell>
+                <TableCell align="right">
+                  <CollapsibleText
+                    text={session.note || "No note"}
+                    maxLength={50}
+                  />
+                </TableCell>
+              </TableRow>
+            ))}
           </TableBody>
         </Table>
       </TableContainer>
